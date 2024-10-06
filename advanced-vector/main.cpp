@@ -55,6 +55,7 @@ struct Obj {
             throw std::runtime_error("Oops");
         }
         ++num_copied;
+        //std::cout<<"copy"<<num_copied<<std::endl;
     }
 
     Obj(Obj&& other) noexcept
@@ -256,7 +257,7 @@ void Test3() {
         Vector<Obj> v_medium(MEDIUM_SIZE);
         v_medium[MEDIUM_SIZE / 2].id = ID;
         Vector<Obj> v_large(LARGE_SIZE);
-        v_large = v_medium;
+         v_large = v_medium;
         assert(v_large.Size() == MEDIUM_SIZE);
         assert(v_large.Capacity() == LARGE_SIZE);
         assert(v_large[MEDIUM_SIZE / 2].id == ID);
@@ -337,8 +338,10 @@ void Test4() {
         assert(v.Capacity() == SIZE * 2);
         assert(v[SIZE].id == ID);
         assert(Obj::num_default_constructed == SIZE);
+        //std::cout<<Obj::num_copied;
         assert(Obj::num_copied == 0);
         assert(Obj::num_constructed_with_id == 1);
+        //std::cout<<Obj::num_moved;
         assert(Obj::num_moved == SIZE + 1);
     }
     {
@@ -606,6 +609,8 @@ void Dump() {
          << ", Move ctors: "sv << C::move_ctor          //
          << ", Copy assignments: "sv << C::copy_assign  //
          << ", Move assignments: "sv << C::move_assign  //
+         << ", C::copy_assign: "sv << C::copy_assign  //
+         << ", C::copy_assign: "sv << C::move_assign  //
          << ", Dtors: "sv << C::dtor << endl;
 }
 

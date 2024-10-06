@@ -18,14 +18,12 @@ public:
         :buffer_(nullptr)
         ,capacity_(0)
     {    
-        this->capacity_ = std::exchange(other.capacity_, 0);
-        this->buffer_ = std::exchange(other.buffer_, nullptr);
+        Swap(other);
     }
     RawMemory& operator=(RawMemory&& rhs) noexcept{
         if(this != &rhs){  
-                this->capacity_ = std::exchange(rhs.capacity_, 0);
-                this->buffer_ = std::exchange(rhs.buffer_, nullptr);
-            }
+            Swap(rhs);
+        }
         return *this;
     }
 
@@ -108,8 +106,7 @@ public:
     }
 
     Vector(Vector&& rhs){
-        this->data_ = std::move(rhs.data_);
-        this->size_ = std::exchange(rhs.size_, 0);
+        Swap(rhs);
     }
 
     Vector& operator=(const Vector& rhs){
@@ -118,29 +115,16 @@ public:
                 Vector rhs_copy(rhs);
                 Swap(rhs_copy);
             } else {
-                size_t step = 0;
-                if (rhs.size_ < size_){
-                    for (; step < size_; step++){
-                        if (step < rhs.size_){
-                            *(data_ + step) = rhs[step];
-                        } else {
-                            Destroy((data_ + step));
-                        }
-                    }
-                } else {
-                    for (; step < size_; step++){               
-                        *(data_ + step) = rhs[step];  
-                    }
-                    std::uninitialized_copy_n(std::next(rhs.data_ + step), rhs.size_- step, std::next(data_ + step));
-                }
-                size_ = rhs.size_;  
+                FillFromOther(rhs);
             }
         }
         return *this;
     }
 
     Vector& operator=(Vector&& rhs) noexcept{
-        Swap(rhs);
+        if(this != &rhs){
+            Swap(rhs);
+        }
         return *this;
     }
 
@@ -182,15 +166,12 @@ public:
     void Swap(Vector& other) noexcept{
         this->data_.Swap(other.data_);
         std::swap(this->size_, other.size_);
-
     }
 
     void Resize(size_t new_size){
         if (size_ > new_size){
             size_t step = new_size;
-            for (;step < size_; step++){
-                Destroy((data_ + step));
-            }
+            std::destroy_n((data_ + step ),  size_ - new_size);
         } else if (new_size > size_){
             Reserve(new_size);
             std::uninitialized_value_construct_n((data_ + size_), new_size - size_);
@@ -199,59 +180,16 @@ public:
     }
 
     void PushBack(Type&& value) {
-       if (size_ == Capacity()){
-            size_t new_capacity = size_ == 0 ? 1 : size_*2;
-            RawMemory<Type> new_data(new_capacity);
-            new (new_data + size_) Type(std::move(value));
-            if constexpr (std::is_nothrow_move_constructible_v<Type> || !std::is_copy_constructible_v<Type>) {
-                std::uninitialized_move_n(data_.GetAddress(), size_, new_data.GetAddress());
-            } else {
-                std::uninitialized_copy_n(data_.GetAddress(), size_, new_data.GetAddress());
-            }
-            std::destroy_n(data_.GetAddress(), size_);
-            data_.Swap(new_data);  
-        } else {
-            new (data_ + size_) Type(std::move(value));
-        }
-        size_++;
+        EmplaceBack(std::move(value));
     }
 
     void PushBack(const Type& value){
-       if (size_ == Capacity()){
-            size_t new_capacity = size_ == 0 ? 1 : size_*2;
-            RawMemory<Type> new_data(new_capacity);
-            new (new_data + size_) Type(value);
-            if constexpr (std::is_nothrow_move_constructible_v<Type> || !std::is_copy_constructible_v<Type>) {
-                std::uninitialized_move_n(data_.GetAddress(), size_, new_data.GetAddress());
-            } else {
-                std::uninitialized_copy_n(data_.GetAddress(), size_, new_data.GetAddress());
-            }
-            std::destroy_n(data_.GetAddress(), size_);
-            data_.Swap(new_data);  
-        } else {
-            new (data_ + size_) Type(value);
-        }
-        size_++;
+        EmplaceBack(value);
     }
 
     template <typename... Args>
     Type& EmplaceBack(Args&&... args){
-        if (size_ == Capacity()){
-            size_t new_capacity = size_ == 0 ? 1 : size_*2;
-            RawMemory<Type> new_data(new_capacity);
-            new (new_data + size_) Type(std::forward<Args>(args)...);
-            if constexpr (std::is_nothrow_move_constructible_v<Type> || !std::is_copy_constructible_v<Type>) {
-                std::uninitialized_move_n(data_.GetAddress(), size_, new_data.GetAddress());
-            } else {
-                std::uninitialized_copy_n(data_.GetAddress(), size_, new_data.GetAddress());
-            }
-            std::destroy_n(data_.GetAddress(), size_);
-            data_.Swap(new_data);  
-        } else {
-            new (data_ + size_) Type(std::forward<Args>(args)...);
-        }
-        size_++;
-        return data_[size_-1];
+        return *Emplace(cend(), std::forward<Args>(args)...);
     }
 
     void PopBack(){
@@ -288,9 +226,10 @@ public:
 
     template <typename... Args>
     iterator Emplace(const_iterator pos, Args&&... args){
+        assert(pos >= begin() && pos <= end());
         size_t index = pos - data_.GetAddress();
         iterator new_pos = nullptr;
-        if (size_ == Capacity()){//если память заполнена надо выделить новую
+        if (size_ == Capacity()){
             size_t new_capacity = size_ == 0 ? 1 : size_ * 2;
             RawMemory<Type> new_data(new_capacity);
             if constexpr (std::is_nothrow_move_constructible_v<Type> || !std::is_copy_constructible_v<Type>) {
@@ -305,7 +244,7 @@ public:
             std::destroy_n(data_.GetAddress(), size_);
             data_.Swap(new_data);
 
-        } else if (size_ != 0){
+        } else if (size_ != 0 && pos!= end()){
             if constexpr (std::is_nothrow_move_constructible_v<Type> || !std::is_copy_constructible_v<Type>) {
                 Type new_elem(std::forward<Args>(args)...);
                 new (data_ + size_) Type(std::move(data_[size_ - 1]));
@@ -327,6 +266,7 @@ public:
     }
 
     iterator Erase(const_iterator pos){ /*noexcept(std::is_nothrow_move_assignable_v<Type>)*/
+        assert(pos >= begin() && pos <= end());
         size_t index = pos - begin();
         if constexpr (std::is_nothrow_move_constructible_v<Type> || !std::is_copy_constructible_v<Type>) {
             std::move(std::next(begin(), index + 1), end(), std::next(begin(), index));
@@ -349,6 +289,17 @@ public:
     }
 
 private:
+    void FillFromOther(const Vector& other){
+        if (other.size_ < size_){
+            auto del_pos = std::copy(other.begin(), other.end(), begin());
+            std::destroy_n(del_pos, size_ - other.size_);
+        } else {
+            auto init_pos = std::copy_n(other.begin(), size_, begin());
+            std::uninitialized_copy_n(std::next(other.data_ + size_), other.size_ - size_, init_pos);
+        }
+        size_ = other.size_;  
+    }
+
     static Type* Allocate(size_t n) {
         return n != 0 ? static_cast<Type*>(operator new(n * sizeof(Type))) : nullptr;
     }
