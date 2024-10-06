@@ -266,7 +266,7 @@ public:
     }
 
     iterator Erase(const_iterator pos){ /*noexcept(std::is_nothrow_move_assignable_v<Type>)*/
-        assert(pos >= begin() && pos <= end());
+        assert(pos >= begin() && pos <= end()-1);
         size_t index = pos - begin();
         if constexpr (std::is_nothrow_move_constructible_v<Type> || !std::is_copy_constructible_v<Type>) {
             std::move(std::next(begin(), index + 1), end(), std::next(begin(), index));
@@ -290,13 +290,10 @@ public:
 
 private:
     void FillFromOther(const Vector& other){
-        if (other.size_ < size_){
-            auto del_pos = std::copy(other.begin(), other.end(), begin());
-            std::destroy_n(del_pos, size_ - other.size_);
-        } else {
-            auto init_pos = std::copy_n(other.begin(), size_, begin());
-            std::uninitialized_copy_n(std::next(other.data_ + size_), other.size_ - size_, init_pos);
-        }
+        size_t index = std::min(other.size_, size_);
+        auto pos = std::copy_n(other.begin(), index, begin());
+        std::destroy_n(pos, size_ - index);
+        std::uninitialized_copy_n(std::next(other.data_ + index), other.size_ - index, pos);
         size_ = other.size_;  
     }
 
