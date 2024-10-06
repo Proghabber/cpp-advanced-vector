@@ -266,7 +266,7 @@ public:
     }
 
     iterator Erase(const_iterator pos){ /*noexcept(std::is_nothrow_move_assignable_v<Type>)*/
-        assert(pos >= begin() && pos <= end()-1);
+        assert(pos >= begin() && pos < end());
         size_t index = pos - begin();
         if constexpr (std::is_nothrow_move_constructible_v<Type> || !std::is_copy_constructible_v<Type>) {
             std::move(std::next(begin(), index + 1), end(), std::next(begin(), index));
